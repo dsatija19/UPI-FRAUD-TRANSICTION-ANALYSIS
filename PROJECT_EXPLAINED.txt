@@ -1,0 +1,169 @@
+=====================================================================
+ UPI TRANSACTIONS 2024: DATA ANALYSIS & FRAUD DETECTION
+ Project walkthrough, definitions and KPIs
+=====================================================================
+
+This file explains, step by step, what the notebook
+(UPI_Transactions.ipynb) does, defines the key terms, and lists the
+KPIs. For setup commands, see README.md.
+
+
+---------------------------------------------------------------------
+ PART 1: STEP-BY-STEP: WHAT HAPPENS IN THE NOTEBOOK
+---------------------------------------------------------------------
+
+STEP 1: Import libraries
+  - pandas and numpy for data handling, matplotlib and seaborn for
+    charts, scikit-learn for machine learning.
+
+STEP 2: Load the data  (DataSets/upi_transactions_2024.csv)
+  - 250,000 UPI transactions from 2024, 17 columns each.
+  - Columns include: transaction type (P2P, P2M, Bill Payment, Recharge),
+    merchant category, amount, status (SUCCESS/FAILED), sender and
+    receiver age group, sender state, sender and receiver bank, device,
+    network, hour, day of week, weekend flag, and fraud_flag (0/1).
+  - The timestamp column is converted into a proper date-time format.
+
+STEP 3: Exploratory Data Analysis (EDA)
+  Charts are drawn to answer business questions:
+  - Spending by sender age group  -> 26-35 spends the most, 56+ the least.
+  - Spending by sender state      -> Maharashtra highest, West Bengal lowest.
+  - Month-wise spending trend     -> line chart across 2024.
+  - Spending by hour of day       -> by value, the peak is 7-8 PM and
+                                     the low is 4-5 AM.
+  - Success vs failure by network -> 4G carries most transactions,
+                                     3G the fewest.
+  - Spending by transaction type  -> P2P highest, Recharge lowest.
+  - Spending by sender bank and by day of week (weekdays are roughly
+    equal).
+  - Fraud vs non-fraud pie chart  -> 0.2% fraud, 99.8% genuine.
+  - Fraud count by sender bank.
+
+STEP 4: Check data quality
+  - Missing values are checked for every column: there are none.
+
+STEP 5: Prepare the features
+  - Transaction id and timestamp are dropped (they are identifiers,
+    not behaviour).
+  - Categorical columns (bank, state, device, ...) are converted into
+    0/1 columns with One-Hot Encoding (pd.get_dummies).
+
+STEP 6: First models on the original data
+  - The data is split 70% train / 30% test.
+  - Logistic Regression and Random Forest are trained.
+  - Result: accuracy is 1.00, but the models never catch a single fraud
+    (fraud recall = 0.00, ROC AUC about 0.5). This happens because only
+    480 of 250,000 rows are fraud, so the model learns to always answer
+    "not fraud".
+
+STEP 7: Fix the class imbalance with resampling
+  - Downsampling: non-fraud rows are reduced to 10,000.
+  - Upsampling: the 480 fraud rows are copied up to 10,000.
+  - The data is shuffled so the model can't learn from row order.
+
+STEP 8: Retrain the Random Forest on the balanced data
+  - 100 trees, max depth 10, balanced class weights.
+  - Results reported in the notebook:
+        Test accuracy        0.94
+        Fraud precision      0.93
+        Fraud recall         0.95
+        10-fold CV ROC AUC   0.989
+
+STEP 9: Feature importance
+  - The top 20 features the Random Forest relied on are plotted
+    (e.g. receiver age 26-35, receiver bank SBI, P2M/P2P, iOS).
+
+  CAUTION ON STEP 8 RESULTS:
+  The fraud rows are copied (Step 7) BEFORE the data is split into
+  train and test. So the same fraud row can appear in both sets, and
+  the model "recognises" rows it has already seen. This is called
+  DATA LEAKAGE, and it makes the 0.99 score look better than it really
+  is. When the split is done first and only the training part is
+  resampled, the ROC AUC drops to about 0.49, which is random level.
+  Statistical tests also show no column is meaningfully linked to
+  fraud_flag in this dataset, so the fraud labels appear to be random
+  (the dataset is likely synthetic). The EDA findings (Step 3) are not
+  affected by this.
+
+
+---------------------------------------------------------------------
+ PART 2: DEFINITIONS
+---------------------------------------------------------------------
+
+  UPI                 Unified Payments Interface: India's real-time
+                      bank-to-bank mobile payment system (by NPCI).
+  P2P                 Person-to-Person transfer (e.g. sending money
+                      to a friend).
+  P2M                 Person-to-Merchant payment (e.g. paying a shop).
+  Fraud flag          Label in the data: 1 = fraudulent, 0 = genuine.
+  EDA                 Exploratory Data Analysis: summarising and
+                      charting data to find patterns.
+  Binary classification
+                      Predicting one of two classes (fraud / not fraud).
+  Class imbalance     When one class is far rarer than the other
+                      (here 0.19% fraud vs 99.81% genuine).
+  Upsampling          Duplicating rows of the rare class.
+  Downsampling        Randomly removing rows of the common class.
+  Train/test split    Dividing data so a model is graded on rows it
+                      has not seen.
+  Cross-validation    Repeating the train/test split several times
+                      (here 10 "folds") and averaging the scores.
+  Data leakage        When test information leaks into training,
+                      giving falsely good scores.
+  One-Hot Encoding    Turning a category (e.g. bank = SBI) into 0/1
+                      columns.
+  Logistic Regression A simple linear model that outputs a probability.
+  Random Forest       Many decision trees voting together.
+  Feature importance  How much each column helped the Random Forest
+                      make decisions.
+  Confusion matrix    2x2 table of predictions:
+                        TP = fraud correctly flagged
+                        FP = genuine wrongly flagged (false alarm)
+                        FN = fraud missed
+                        TN = genuine correctly passed
+  ROC curve / AUC     Plots catch-rate vs false-alarm rate across
+                      thresholds; the area under it (AUC) runs from
+                      0.5 (random) to 1.0 (perfect).
+
+
+---------------------------------------------------------------------
+ PART 3: KPIs (KEY PERFORMANCE INDICATORS)
+---------------------------------------------------------------------
+
+ A) Business KPIs (full dataset)
+
+  KPI                    Formula                          Value
+  ---------------------  -------------------------------  -------------
+  Total transactions     count of rows                    250,000
+  Total value            sum(amount)                      Rs 32.79 Cr
+  Average ticket size    total value / transactions       Rs 1,312
+  Median ticket size     middle amount                    Rs 629
+  Success rate           SUCCESS / total                  95.05%
+  Failure rate           FAILED / total                   4.95%
+  Fraud cases            count(fraud_flag = 1)            480
+  Fraud rate             fraud cases / total              0.192%
+  Fraud value            sum(amount where fraud)          Rs 7.20 L
+  Top spending age group                                  26-35
+  Top spending state                                      Maharashtra
+  Top transaction type (by value)                         P2P
+  Peak hour (by value)                                    19:00-20:00
+
+ B) Model KPIs
+
+  Accuracy    (TP + TN) / all. Misleading on imbalanced data:
+              always saying "not fraud" already scores 99.8%.
+  Precision   TP / (TP + FP): of the flagged transactions,
+              how many were really fraud.
+  Recall      TP / (TP + FN): of the real frauds, how many
+              were caught.
+  F1-score    Balance of precision and recall.
+  ROC AUC     Ranking quality: 0.5 = random, 1.0 = perfect.
+
+  Values from the notebook:
+                            Original data    Resampled data
+    Accuracy                1.00             0.94
+    Fraud recall            0.00             0.95
+    ROC AUC                 ~0.48-0.49       0.989 (inflated by leakage,
+                                                    see caution in Step 9)
+
+=====================================================================
